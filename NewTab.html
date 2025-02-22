@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sub-URL Generator with Redirection</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    input, button {
+      padding: 10px;
+      margin: 5px 0;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .output {
+      margin-top: 20px;
+      word-wrap: break-word;
+    }
+    a {
+      color: #007BFF;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .link-list {
+      margin-top: 10px;
+    }
+    .link-item {
+      margin-bottom: 10px;
+    }
+  </style>
+  <!-- Include CryptoJS for MD5 hashing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Sub-URL Generator with Redirection</h1>
+    <label for="customDomain">Enter Custom Domain:</label>
+    <input type="text" id="customDomain" placeholder="Enter custom domain (e.g., https://customdomain.com)">
+
+    <label for="masterDomain">Enter Master Domain:</label>
+    <input type="text" id="masterDomain" placeholder="Enter master domain (e.g., https://mydomain.com)">
+
+    <label for="quantity">Number of Sub-URLs to Generate:</label>
+    <input type="number" id="quantity" placeholder="Enter quantity" min="1">
+
+    <button onclick="generateSubUrls()">Generate Sub-URLs</button>
+
+    <div class="output">
+      <h2>Generated Sub-URLs:</h2>
+      <div id="generatedSubUrls" class="link-list"></div>
+      <button id="downloadSubUrlsCsv" disabled onclick="downloadSubUrlsCsv()">Download Sub-URLs as CSV</button>
+    </div>
+
+    <div class="output">
+      <h2>Tracking Data:</h2>
+      <pre id="trackingData"></pre>
+      <button id="downloadTrackingCsv" disabled onclick="downloadTrackingCsv()">Download Tracking Data as CSV</button>
+    </div>
+  </div>
+
+  <script>
+    let trackingData = []; // Array to store tracking data
+    let generatedSubUrlsData = []; // Array to store generated sub-URLs
+
+    // Function to generate MD5 hash
+    function generateMD5Hash(input) {
+      return CryptoJS.MD5(input).toString();
+    }
+
+    // Function to generate sub-URLs
+    function generateSubUrls() {
+      const customDomain = document.getElementById('customDomain').value;
+      const masterDomain = document.getElementById('masterDomain').value;
+      const quantity = parseInt(document.getElementById('quantity').value);
+
+      if (!customDomain || !masterDomain || isNaN(quantity) || quantity < 1) {
+        alert('Please enter valid custom domain, master domain, and quantity!');
+        return;
+      }
+
+      const generatedSubUrlsContainer = document.getElementById('generatedSubUrls');
+      generatedSubUrlsContainer.innerHTML = ''; // Clear previous sub-URLs
+      generatedSubUrlsData = []; // Reset generated sub-URLs data
+
+      for (let i = 0; i < quantity; i++) {
+        // Generate unique MD5 hash
+        const uniqueHash = generateMD5Hash(customDomain + Date.now() + i);
+
+        // Create the sub-URL
+        const subUrl = `${customDomain}/${uniqueHash}`;
+
+        // Create the master domain URL with uniqueHash
+        const masterUrl = `${masterDomain}${uniqueHash}`;
+
+        // Create a hyperlink to the master domain
+        const linkElement = document.createElement('a');
+        linkElement.href = masterUrl;
+        linkElement.textContent = `${i + 1}. ${subUrl}`; // Add serial number
+        linkElement.target = '_blank'; // Open in new tab
+
+        // Attach click event to the sub-URL
+        linkElement.addEventListener('click', async (event) => {
+          event.preventDefault();
+          const data = await captureTrackingData(uniqueHash, customDomain, masterDomain);
+          trackingData.push(data); // Add data to tracking array
+          document.getElementById('trackingData').textContent = JSON.stringify(trackingData, null, 2);
+          document.getElementById('downloadTrackingCsv').disabled = false; // Enable tracking CSV download
+          window.open(masterUrl, '_blank'); // Open master domain in a new tab
+        });
+
+        // Append the sub-URL to the container
+        const linkWrapper = document.createElement('div');
+        linkWrapper.className = 'link-item';
+        linkWrapper.appendChild(linkElement);
+        generatedSubUrlsContainer.appendChild(linkWrapper);
+
+        // Store sub-URL data
+        generatedSubUrlsData.push({ customDomain, uniqueHash, subUrl, masterUrl });
+      }
+
+      // Enable sub-URLs CSV download button
+      document.getElementById('downloadSubUrlsCsv').disabled = false;
+    }
+
+    // Function to capture tracking data
+    async function captureTrackingData(uniqueHash, customDomain, masterDomain) {
+      try {
+        // Get IP address
+        const ipResponse = await fetch('https://api.ipify.org?format=json');
+        const ipData = await ipResponse.json();
+        const ip = ipData.ip;
+
+        // Get location details
+        const locationResponse = await fetch(`https://ipapi.co/${ip}/json/`);
+        const locationData = await locationResponse.json();
+
+        // Get browser and OS details
+        const browser = navigator.userAgent;
+        const os = navigator.platform;
+
+        // Prepare tracking data
+        return {
+          uniqueHash,
+          customDomain,
+          masterDomain,
+          ip,
+          location: `${locationData.city}, ${locationData.region}, ${locationData.country_name}`,
+          browser,
+          os,
+          timestamp: new Date().toISOString(),
+        };
+      } catch (error) {
+        console.error('Error capturing tracking data:', error);
+        return null;
+      }
+    }
+
+    // Function to convert data to CSV format
+    function convertToCsv(data, headers) {
+      const headerRow = headers.join(',');
+      const rows = data.map((item) => headers.map((header) => item[header]).join(','));
+      return `${headerRow}\n${rows.join('\n')}`;
+    }
+
+    // Function to download sub-URLs as CSV
+    function downloadSubUrlsCsv() {
+      if (generatedSubUrlsData.length === 0) {
+        alert('No sub-URLs available to download!');
+        return;
+      }
+
+      const headers = ['customDomain', 'uniqueHash', 'subUrl', 'masterUrl'];
+      const csvContent = convertToCsv(generatedSubUrlsData, headers);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'sub_urls.csv';
+      link.click();
+
+      URL.revokeObjectURL(url);
+    }
+
+    // Function to download tracking data as CSV
+    function downloadTrackingCsv() {
+      if (trackingData.length === 0) {
+        alert('No tracking data available to download!');
+        return;
+      }
+
+      const headers = ['uniqueHash', 'customDomain', 'masterDomain', 'ip', 'location', 'browser', 'os', 'timestamp'];
+      const csvContent = convertToCsv(trackingData, headers);
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'tracking_data.csv';
+      link.click();
+
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
